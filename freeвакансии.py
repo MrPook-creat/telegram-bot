@@ -1,8 +1,8 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, ApplicationBuilder, CommandHandler, MessageHandler,
+    Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ConversationHandler, ContextTypes, filters
 )
 from dotenv import load_dotenv
@@ -57,7 +57,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == 'start':
         await query.message.reply_text("Вас приветствует бот для вакансий. Что вы хотите сделать?", reply_markup=main_menu_keyboard())
     elif query.data == 'post_job':
-        await query.message.reply_text("Пример вакансии: ... Введите название компании:", reply_markup=back_button_keyboard())
+        # Добавлен пример вакансии
+        example_text = (
+            "Пример вакансии:\n\n"
+            "Компания: ООО 'ТехИнновации'\n"
+            "Должность: Менеджер по продажам\n"
+            "Описание: Мы ищем активного и целеустремленного сотрудника на должность менеджера по продажам. "
+            "Опыт работы от 1 года, знание CRM-систем, отличные навыки коммуникации.\n"
+            "Условия: Работа в офисе, график 5/2, зарплата от 50,000 руб.\n"
+            "Контакты: hr@techinnovations.ru\n"
+        )
+        await query.message.reply_text(example_text + "\nВведите название компании:", reply_markup=back_button_keyboard())
         return COMPANY_NAME
     elif query.data == 'help':
         await query.message.reply_text("Добро пожаловать в раздел помощи.", reply_markup=help_menu_keyboard())
@@ -75,13 +85,17 @@ async def company_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def company_description_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['company_description'] = update.message.text
-    await update.message.reply_text("Введите веб-сайт компании:", reply_markup=back_button_keyboard())
+    await update.message.reply_text("Введите веб-сайт компании или напишите 'пропустить', если нет сайта:", reply_markup=back_button_keyboard())
     return COMPANY_WEBSITE
 
 async def company_website_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     company_name = context.user_data.get('company_name')
     company_description = context.user_data.get('company_description')
     company_website = update.message.text
+
+    # Если пользователь ввел "пропустить"
+    if company_website.lower() == "пропустить":
+        company_website = "не указан"
 
     # Проверка на наличие запрещенных слов
     for word in BANNED_WORDS:
@@ -90,10 +104,15 @@ async def company_website_handler(update: Update, context: ContextTypes.DEFAULT_
             return ConversationHandler.END
 
     # Отправка вакансии в канал
-    message = f"Новая вакансия:\n\nКомпания: {company_name}\nОписание: {company_description}\nСайт: {company_website}"
+    message = (
+        f"Новая вакансия:\n\n"
+        f"Компания: {company_name}\n"
+        f"Описание: {company_description}\n"
+        f"Сайт: {company_website}"
+    )
     await context.bot.send_message(chat_id=CHANNEL_ID, text=message)
 
-    await update.message.reply_text("Вакансия опубликована!", reply_markup=main_menu_keyboard())
+    await update.message.reply_text("Вакансия успешно опубликована!", reply_markup=main_menu_keyboard())
     return ConversationHandler.END
 
 # Функция обработки отмены
@@ -134,14 +153,9 @@ async def init():
 
 # Функция для запуска обоих серверов параллельно
 async def main():
-    # Запуск Telegram бота в отдельном таске
     telegram_task = asyncio.create_task(run_telegram_bot())
-
-    # Запуск aiohttp сервера
     aiohttp_app = await init()
-    aiohttp_task = asyncio.create_task(web.run_app(aiohttp_app, port=int(os.environ.get("PORT", 8080))))
-
-    # Ожидание завершения всех задач
+    aiohttp_task = asyncio.create_task(web._run_app(aiohttp_app, port=int(os.environ.get("PORT", 8080))))
     await asyncio.gather(telegram_task, aiohttp_task)
 
 if __name__ == "__main__":
