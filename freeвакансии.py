@@ -8,6 +8,7 @@ from telegram.ext import (
 from dotenv import load_dotenv
 import nest_asyncio
 import asyncio
+from aiohttp import web
 
 # Загрузка токена из .env файла
 load_dotenv()
@@ -46,10 +47,7 @@ def help_menu_keyboard():
 
 # Функция старта
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Добро пожаловать! Нажмите 'Старт', чтобы продолжить.",
-        reply_markup=start_keyboard()
-    )
+    await update.message.reply_text("Добро пожаловать! Нажмите 'Старт', чтобы продолжить.", reply_markup=start_keyboard())
 
 # Обработчик нажатия на кнопки
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,78 +55,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'start':
-        await query.message.reply_text(
-            "Вас приветствует бот для вакансий. Что вы хотите сделать?",
-            reply_markup=main_menu_keyboard()
-        )
+        await query.message.reply_text("Вас приветствует бот для вакансий. Что вы хотите сделать?", reply_markup=main_menu_keyboard())
     elif query.data == 'post_job':
-        # Отображаем пример вакансии перед началом ввода
-        await query.message.reply_text(
-            "Пример вакансии:\n\n"
-            "Компания: ООО 'Пример'\n"
-            "Должность: Менеджер по продажам\n"
-            "Описание: Ищем активного и целеустремленного менеджера по продажам с опытом работы...\n"
-            "Контакты: example@mail.com\n\n"
-            "Теперь введите название компании:",
-            reply_markup=back_button_keyboard()
-        )
+        await query.message.reply_text("Пример вакансии: ... Введите название компании:", reply_markup=back_button_keyboard())
         return COMPANY_NAME
     elif query.data == 'help':
-        await query.message.reply_text(
-            "Добро пожаловать в раздел помощи. Здесь вы можете узнать, как пользоваться ботом.",
-            reply_markup=help_menu_keyboard()
-        )
+        await query.message.reply_text("Добро пожаловать в раздел помощи.", reply_markup=help_menu_keyboard())
     elif query.data == 'restart':
         await query.message.reply_text("Бот перезапущен.", reply_markup=main_menu_keyboard())
     elif query.data == 'back':
         await query.message.reply_text("Возвращаемся назад.", reply_markup=main_menu_keyboard())
         return ConversationHandler.END
 
-# Обработчик для ввода названия компании
+# Функции для обработки ввода данных от пользователя (название компании, описание и т.д.)
 async def company_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    company_name = update.message.text
-    context.user_data['company_name'] = company_name
+    context.user_data['company_name'] = update.message.text
     await update.message.reply_text("Введите описание компании:", reply_markup=back_button_keyboard())
     return COMPANY_DESCRIPTION
 
-# Обработчик для ввода описания компании
 async def company_description_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    description = update.message.text
-    context.user_data['description'] = description
-    await update.message.reply_text("Введите ссылку на сайт компании или напишите 'пропустить':", reply_markup=back_button_keyboard())
+    context.user_data['company_description'] = update.message.text
+    await update.message.reply_text("Введите веб-сайт компании:", reply_markup=back_button_keyboard())
     return COMPANY_WEBSITE
 
-# Обработчик для ввода ссылки на сайт
 async def company_website_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    website = update.message.text
-    context.user_data['website'] = website if website.lower() != 'пропустить' else 'Не указан'
+    company_name = context.user_data.get('company_name')
+    company_description = context.user_data.get('company_description')
+    company_website = update.message.text
 
-    if any(word in website.lower() for word in BANNED_WORDS):
-        await update.message.reply_text("Ваша заявка не принята из-за запрещённых слов.")
-        return ConversationHandler.END
+    # Проверка на наличие запрещенных слов
+    for word in BANNED_WORDS:
+        if word in company_name.lower() or word in company_description.lower():
+            await update.message.reply_text("Ваша вакансия содержит запрещенные слова!")
+            return ConversationHandler.END
 
-    # Отправляем вакансию в канал
-    await context.bot.send_message(
-        chat_id=CHANNEL_ID,
-        text=f"Новая вакансия от {context.user_data['company_name']}!\n"
-             f"Описание: {context.user_data['description']}\n"
-             f"Сайт: {context.user_data['website']}"
-    )
+    # Отправка вакансии в канал
+    message = f"Новая вакансия:\n\nКомпания: {company_name}\nОписание: {company_description}\nСайт: {company_website}"
+    await context.bot.send_message(chat_id=CHANNEL_ID, text=message)
 
-    # Подтверждение публикации с кнопкой "Старт"
-    await update.message.reply_text(
-        "Вакансия успешно опубликована! Если желаете написать новую вакансию, пропишите в этом чате команду: /start или нажмите на кнопку 'Старт'.",
-        reply_markup=start_keyboard()
-    )
+    await update.message.reply_text("Вакансия опубликована!", reply_markup=main_menu_keyboard())
     return ConversationHandler.END
 
-# Обработчик отмены
+# Функция обработки отмены
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Публикация вакансии отменена.")
     return ConversationHandler.END
 
-# Основная функция
-async def main():
+# Основная функция для запуска Telegram-бота
+async def run_telegram_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Создание обработчика диалога
@@ -147,6 +121,28 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_handler))
 
     await application.run_polling()
+
+# Функция для обработки запроса через aiohttp
+async def handle(request):
+    return web.Response(text="Bot is running")
+
+# Настройка и запуск aiohttp сервера
+async def init():
+    server = web.Application()
+    server.router.add_get("/", handle)
+    return server
+
+# Функция для запуска обоих серверов параллельно
+async def main():
+    # Запуск Telegram бота в отдельном таске
+    telegram_task = asyncio.create_task(run_telegram_bot())
+
+    # Запуск aiohttp сервера
+    aiohttp_app = await init()
+    aiohttp_task = asyncio.create_task(web.run_app(aiohttp_app, port=int(os.environ.get("PORT", 8080))))
+
+    # Ожидание завершения всех задач
+    await asyncio.gather(telegram_task, aiohttp_task)
 
 if __name__ == "__main__":
     nest_asyncio.apply()
