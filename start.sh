@@ -1,2 +1,3 @@
-'#!/bin/bash' 
-'python3 free�����ᨨ.py' 
+﻿#!/bin/bash
+python3 freeвакансии.py
+
